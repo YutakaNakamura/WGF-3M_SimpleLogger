@@ -21,8 +21,7 @@ int main(void) {
 
 	printf("Enter COM port > ");
 	int	comNo;
-	//scanf("%d", &comNo);
-	comNo = 29;
+	scanf("%d", &comNo);
 	
 	printf("Open COM%d\n", comNo);
 
