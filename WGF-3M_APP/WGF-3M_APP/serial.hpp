@@ -21,6 +21,7 @@
 #include "staticfifo.hpp"
 
 #include <vector>
+#include <tuple>
 
 using singleLineData = std::array<char, 27>;
 
@@ -36,11 +37,14 @@ private:
 
 	HANDLE mHandle;
 	
-	//受信したデータは即座にReceiveFIFOに入力される
-	StaticFIFO<std::string> mReceiveFifo;
-
+	//受信データの一時的バッファ
 	std::string mReceiveStringBuf;
+
+	//生データ置き場
 	std::vector<std::string> mReceiveData;
+
+	//加工(簡素化)後データ置き場 (numRecord, Fz, Mx, My)
+	std::vector< std::tuple<int, int, int, int> > mSimplifyData;
 
 public:
 	Serial() {}
@@ -151,10 +155,6 @@ public:
 			unsigned short	data[6];
 			sscanf(str, "%1d%4hx%4hx%4hx%4hx%4hx%4hx", &numRecord, &data[0], &data[1], &data[2], &data[3], &data[4], &data[5]);
 			std::cout << numRecord << "," << data[2] << "," << data[3] << "," << data[4] << std::endl;
-			//sprintf(str, "%05d,%d,%05d,%05d,%05d,%05d,%05d,%05d\n",
-			//	clk / tw * tw, tick,
-			//	data[0], data[1], data[2], data[3], data[4], data[5]);
-
 		}
 
 		WriteFile(mHandle, "R", 1, &numOfPut, 0);
@@ -236,6 +236,13 @@ public:
 		});
 	}
 
+	//コンソールに簡素化済みデータを保持する
+	void printSimplify() {
+		std::for_each(mSimplifyData.begin(), mSimplifyData.end(), [](std::tuple<int, int, int, int> &pData) {
+			std::cout << std::get<0>(pData) << "," << std::get<1>(pData) << "," << std::get<2>(pData) << "," << std::get<3>(pData) << std::endl;
+		});
+	}
+
 	//ファイルに保持データを出力する。
 	void fileoutput(std::string pFilename) {
 		std::ofstream file;
@@ -246,6 +253,22 @@ public:
 
 		std::for_each(mReceiveData.begin(), mReceiveData.end(), [&file](std::string &pString) {
 			file << pString << std::endl;
+		});
+
+		file.close();
+		std::cout << "complete: save to ->" + pFilename << std::endl;
+	}
+
+	//ファイルに簡素化済みデータを出力する。
+	void fileoutputSimplify(std::string pFilename) {
+		std::ofstream file;
+		file.open(pFilename, std::ios::out);
+		if (!file) {
+			std::cout << "can't open file:" + pFilename << std::endl;
+		}
+
+		std::for_each(mSimplifyData.begin(), mSimplifyData.end(), [&file](std::tuple<int, int, int, int> &pData) {
+			file << std::get<0>(pData) << "," << std::get<1>(pData) << "," << std::get<2>(pData) << "," << std::get<3>(pData) << std::endl;
 		});
 
 		file.close();
@@ -299,9 +322,22 @@ public:
 
 	}
 
-	void ProcessData() {
-		//データ加工用関数 準備中。
+	void SimplifyData() {
+
+		std::for_each(mReceiveData.begin(), mReceiveData.end(), [this](std::string &pString) {
+			//data format
+			int	numRecord;
+			unsigned short	data[6];
+			sscanf(pString.c_str(), "%1d%4hx%4hx%4hx%4hx%4hx%4hx", &numRecord, &data[0], &data[1], &data[2], &data[3], &data[4], &data[5]);
+			//std::cout << numRecord << "," << data[2] << "," << data[3] << "," << data[4] << std::endl;
+
+			mSimplifyData.emplace_back(std::make_tuple(numRecord, data[2], data[3], data[4]));
+		});
+
+
 	}
+
+
 
 	//コンソールからの入力を処理する関数
 	void ControlConsole() {
@@ -329,6 +365,23 @@ public:
 				std::string filename;
 				std::cin >> filename;
 				fileoutput(filename);
+			}
+			if (input == "c") {
+				std::cout << "convert data" << std::endl;
+				std::cout << "raw data -> simplify data" << std::endl;
+				SimplifyData();
+				std::cout << "complete." << std::endl;
+			}
+			if (input == "ps") {
+				std::cout << "print simplify data" << std::endl;
+				printSimplify();
+			}
+			if (input == "ws") {
+				std::cout << "write to file" << std::endl;
+				std::cout << "input filename" << std::endl;
+				std::string filename;
+				std::cin >> filename;
+				fileoutputSimplify(filename);
 			}
 			if (input == "t") {
 				std::cout << "test print output" << std::endl;
