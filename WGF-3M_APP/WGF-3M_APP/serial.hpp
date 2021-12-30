@@ -8,18 +8,19 @@
 #include <array>
 #include <string>
 
+#include <algorithm>
+
 //test (file io)
 #include <iostream>
 #include <fstream>
-
-//string stream
-#include <sstream>
 
 //thread
 #include <thread>
 
 //myfifo
 #include "staticfifo.hpp"
+
+#include <vector>
 
 using singleLineData = std::array<char, 27>;
 
@@ -38,7 +39,8 @@ private:
 	//受信したデータは即座にReceiveFIFOに入力される
 	StaticFIFO<std::string> mReceiveFifo;
 
-	std::stringstream mReceiveStringStream;
+	std::string mReceiveStringBuf;
+	std::vector<std::string> mReceiveData;
 
 public:
 	Serial() {}
@@ -129,7 +131,7 @@ public:
 	}
 
 	//テスト用。とりあえずなにかする。
-	void Start() {
+	void testStart() {
 
 		DWORD numOfPut = 0;
 		WriteFile(mHandle, "R", 1, &numOfPut, 0);
@@ -165,6 +167,40 @@ public:
 			std::cout << std::string( (char*)str.data() ) << std::endl;
 		}
 
+		WriteFile(mHandle, "R", 1, &numOfPut, 0);
+		//WriteFile(mHandle, "R", 1, &numOfPut, 0);
+		//WriteFile(mHandle, "R", 1, &numOfPut, 0);
+		std::string strbuf;
+		{
+			DWORD numberOfGot = 0;
+			const int lengthOfRecieved = 64;
+			HANDLE handleHeap = HeapCreate(0, 0, 0);
+			char *receivedData = (char *)HeapAlloc(handleHeap, 0, sizeof(char) * (lengthOfRecieved + 1));
+			ReadFile(mHandle, receivedData, lengthOfRecieved, &numberOfGot, NULL);
+
+			strbuf = strbuf + std::string(receivedData);
+		}
+
+		std::cout << "====Single Data test3====" << std::endl;
+		std::cout << strbuf << std::endl;
+
+		//バッファから整頓する。27文字以上のときに、分割して一時バッファからメモリに整列保持する。
+		while (strbuf.length() >= 27) {
+
+			int pos = strbuf.find_first_of('\r\n');
+			if (pos != 25) {
+				//バッファ内に27文字以上かつ、
+				//改行が25番目にないときは、異常なデータを受信している。
+				std::cout << "データに異常が発生しています。" << std::endl;
+				return;
+			}
+
+			std::cout << strbuf.substr(0, pos) << std::endl;
+			strbuf.erase(0, pos+2);
+
+		}
+
+		std::cout << "====end of test====" << std::endl;
 	}
 
 	//バースト転送を開始するコマンドを送信する。
@@ -190,15 +226,17 @@ public:
 		DWORD numberOfGot;
 		ReadFile(mHandle, receivedData, lengthOfRecieved, &numberOfGot, NULL);
 
-		mReceiveStringStream << std::string(receivedData);
+		mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData);
 	}
 
-	//コンソールにバッファ内データを表示する。
+	//コンソールに保持データを表示する。
 	void print() {
-		std::cout << mReceiveStringStream.str();
+		std::for_each(mReceiveData.begin(), mReceiveData.end(), [](std::string &pString) {
+			std::cout << pString << std::endl;
+		});
 	}
 
-	//ファイルにバッファ内データを出力する。
+	//ファイルに保持データを出力する。
 	void fileoutput(std::string pFilename) {
 		std::ofstream file;
 		file.open(pFilename, std::ios::out);
@@ -206,12 +244,17 @@ public:
 			std::cout << "can't open file:" + pFilename << std::endl;
 		}
 
-		file << mReceiveStringStream.str();
+		std::for_each(mReceiveData.begin(), mReceiveData.end(), [&file](std::string &pString) {
+			file << pString << std::endl;
+		});
+
 		file.close();
-		std::cout << "complete!" << std::endl;
+		std::cout << "complete: save to ->" + pFilename << std::endl;
 	}
 
-
+	//まとめてデータを取得して、小さいデータに分割保持する関数。
+	//1. std::string mReceiveStringBuf にまとめてデータを保持する。
+	//2. std::vector<std::string> mReceiveData へと分割保持する。
 	void InsertReceiveDataIntoFIFO() {
 		
 		//受信バイト数
@@ -224,15 +267,34 @@ public:
 			const int lengthOfRecieved = 255;
 			HANDLE handleHeap = HeapCreate(0, 0, 0);
 			char *receivedData = (char *)HeapAlloc(handleHeap, 0, sizeof(char) * (lengthOfRecieved + 1));
+			//char receivedData[lengthOfRecieved] = {0};
 			ReadFile(mHandle, receivedData, lengthOfRecieved, &numberOfGot, NULL);
 
 			if (numberOfGot > 0) {
-				mReceiveStringStream << std::string(receivedData);
+				mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData);
 				//debug
-				//mReceiveStringStream << std::string(receivedData) + "num:" + std::to_string(numberOfGot);
+				//mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData) + "num:" + std::to_string(numberOfGot);
 			}
-			
 			HeapDestroy(handleHeap);
+
+
+			//バッファから整頓する。27文字以上のときに、分割して一時バッファからメモリに整列保持する。
+			while (mReceiveStringBuf.length() >= 27) {
+
+				int pos = mReceiveStringBuf.find_first_of('\r\n');
+				if (pos != 25) {
+					//バッファ内に27文字以上かつ、
+					//改行が25番目にないときは、異常なデータを受信している。
+					std::cout << "データに異常が発生しています。" << std::endl;
+					return;
+				}
+				//一次バッファから1行分を、ベクタ後方へとコピーする。
+				std::string oneLineStr = mReceiveStringBuf.substr(0, pos);
+				//std::cout << oneLineStr << std::endl; //debug code
+				mReceiveData.emplace_back(oneLineStr);
+				mReceiveStringBuf.erase(0, pos + 2);//保存後、バッファ先頭から削除する。
+			}
+
 		}
 
 	}
