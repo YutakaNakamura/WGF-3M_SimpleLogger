@@ -12,6 +12,9 @@
 #include <iostream>
 #include <fstream>
 
+//string stream
+#include <sstream>
+
 //thread
 #include <thread>
 
@@ -35,7 +38,7 @@ private:
 	//受信したデータは即座にReceiveFIFOに入力される
 	StaticFIFO<std::string> mReceiveFifo;
 
-	std::string mReceiveStringBuf;
+	std::stringstream mReceiveStringStream;
 
 public:
 	Serial() {}
@@ -187,12 +190,12 @@ public:
 		DWORD numberOfGot;
 		ReadFile(mHandle, receivedData, lengthOfRecieved, &numberOfGot, NULL);
 
-		mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData);
+		mReceiveStringStream << std::string(receivedData);
 	}
 
 	//コンソールにバッファ内データを表示する。
 	void print() {
-		std::cout << mReceiveStringBuf << std::endl;
+		std::cout << mReceiveStringStream.str();
 	}
 
 	//ファイルにバッファ内データを出力する。
@@ -203,8 +206,9 @@ public:
 			std::cout << "can't open file:" + pFilename << std::endl;
 		}
 
-		file << mReceiveStringBuf;
+		file << mReceiveStringStream.str();
 		file.close();
+		std::cout << "complete!" << std::endl;
 	}
 
 
@@ -215,19 +219,17 @@ public:
 		
 		//終了条件: statusがEND ∧ 受信数が0。
 		//終了条件の否定の(終了条件を満たさない)ときにループする。
-		//while ( !( (mStatus == Status::END) && (numberOfGot == 0) ) ) {
-		while ( !(mStatus == Status::END) ) {
+		while ( !( (mStatus == Status::END) && (numberOfGot == 0) ) ) {
 			//1回で最大255文字を取得する
 			const int lengthOfRecieved = 255;
 			HANDLE handleHeap = HeapCreate(0, 0, 0);
 			char *receivedData = (char *)HeapAlloc(handleHeap, 0, sizeof(char) * (lengthOfRecieved + 1));
-			//char receivedData[lengthOfRecieved] = {0};
 			ReadFile(mHandle, receivedData, lengthOfRecieved, &numberOfGot, NULL);
 
 			if (numberOfGot > 0) {
-				mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData);
+				mReceiveStringStream << std::string(receivedData);
 				//debug
-				//mReceiveStringBuf = mReceiveStringBuf + std::string(receivedData) + "num:" + std::to_string(numberOfGot);
+				//mReceiveStringStream << std::string(receivedData) + "num:" + std::to_string(numberOfGot);
 			}
 			
 			HeapDestroy(handleHeap);
