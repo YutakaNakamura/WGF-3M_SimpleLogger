@@ -38,18 +38,9 @@ int main(void) {
 	}
 
 	serial.CheckVersion();
-	serial.Start();
-
-	//serial.StartBurstSampling();
-
-	//for (int i = 0; i < 1000; i++) {
-	//	serial.TestReceive();
-	//}
-	//serial.print();
+	serial.testStart();
 
 	serial.StartProcess();
 
-	//serial.EndBurstSampling();
-	serial.print();
 	return 0;
 }
